@@ -7,3 +7,9 @@ def triplet_loss(y_actual, y_pred, alpha = 0.2):
     loss = tf.reduce_sum(tf.maximum(pos_dist-neg_dist+alpha, 0.0))
 
     return loss
+
+def create_model(input_shape):
+    model = tf.keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
+                                                input_shape=input_shape, pooling=None, classes=128)
+
+    return model
