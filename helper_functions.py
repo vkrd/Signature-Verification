@@ -1,4 +1,5 @@
 import tensorflow as tf
+import keras
 
 def triplet_loss(y_actual, y_pred, alpha = 0.2):
     pos_dist = tf.reduce_sum(tf.square(tf.subtract(y_pred[0], y_pred[1])), axis=-1)
@@ -9,7 +10,10 @@ def triplet_loss(y_actual, y_pred, alpha = 0.2):
     return loss
 
 def create_model(input_shape):
-    model = tf.keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
+    model = keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
                                                 input_shape=input_shape, pooling=None, classes=128)
 
-    return model
+    # Normalization Layer
+    output = keras.layers.Lambda(lambda x: keras.backend.l2_normalize(x, axis=-1))(model.output)
+
+    return keras.Model(model.input, output)
