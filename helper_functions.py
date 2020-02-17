@@ -4,8 +4,10 @@ import numpy as np
 import os
 import random
 import time
+from multiprocessing import Pool
+from keras.preprocessing import image
 
-input_shape = (128, 128, 3)
+input_shape = (256, 128, 3)
 train_users = []
 test_users = []
 
@@ -34,20 +36,33 @@ def load_data():
     print(train_users)
     print("Loaded all data")
 
+def load_triplet(triplet):
+    retTriplet = [image.img_to_array(image.load_img(triplet[i], target_size=(input_shape[0], input_shape[1]))) for i in range(3)]
 
-def get_batch_random(batch_size, set="train"):
+    return retTriplet
+
+
+def get_batch_random(batch_size, set="train", agents=None, chunksize=1):
     start = time.time()
     if (set == "train"):
-        width, height, channels = input_shape
+        height, width, channels = input_shape
 
-        retTriplet = [np.zeros((batch_size, width, height, channels)) for _ in range(3)]
+        #retTriplet = [np.zeros((batch_size, height, width, channels)) for _ in range(3)]
 
-        random_user = random.choice(train_users)
+        tripletLabels = []
 
-        pos = random.choices([f.path for f in os.scandir(random_user)], k=2)
-        neg = random.choice([f.path for f in os.scandir(random_user + "_forg")])
+        for _ in range(batch_size):
+            random_user = random.choice(train_users)
 
-        print("Anchor = " + pos[0] + " Pos = " + pos[1] + " Neg = " + neg)
+            pos = random.choices([f.path for f in os.scandir(random_user)], k=2)
+            neg = random.choice([f.path for f in os.scandir(random_user + "_forg")])
+
+            tripletLabels.append([pos[0], pos[1], neg])
+
+            print("Anchor = " + pos[0] + " Pos = " + pos[1] + " Neg = " + neg)
+
+        with Pool(processes=agents) as pool:
+            retTriplet = pool.map(load_triplet, tripletLabels, chunksize=chunksize)
 
     end = time.time()
     print(end - start)
