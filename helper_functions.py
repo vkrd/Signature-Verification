@@ -1,6 +1,5 @@
 import tensorflow as tf
 import keras
-import numpy as np
 import os
 import random
 import time
@@ -20,6 +19,7 @@ def triplet_loss(y_actual, y_pred, alpha = 0.2):
     return loss
 
 def create_model():
+    # Import or create whatever model you want
     model = keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
                                                 input_shape=input_shape, pooling=None, classes=128)
 
@@ -29,12 +29,12 @@ def create_model():
     return keras.Model(model.input, output)
 
 def load_data():
-    print("Loading data...")
+    print("Mapping data...")
     global train_users, test_users
     train_users = [f.path for f in os.scandir("./data/train") if (not f.path[-1] == "g")]
     test_users = [f.path for f in os.scandir("./data/test") if (not f.path[-1] == "g")]
     print(train_users)
-    print("Loaded all data")
+    print("Mapped all data")
 
 def load_triplet(triplet):
     retTriplet = [image.img_to_array(image.load_img(triplet[i], target_size=(input_shape[0], input_shape[1]))) for i in range(3)]
@@ -45,17 +45,16 @@ def load_triplet(triplet):
 def get_batch_random(batch_size, set="train", agents=None, chunksize=1):
     start = time.time()
     if (set == "train"):
-        height, width, channels = input_shape
-
-        #retTriplet = [np.zeros((batch_size, height, width, channels)) for _ in range(3)]
-
         tripletLabels = []
 
         for _ in range(batch_size):
             random_user = random.choice(train_users)
-
-            pos = random.choices([f.path for f in os.scandir(random_user)], k=2)
-            neg = random.choice([f.path for f in os.scandir(random_user + "_forg")])
+            if (random.random() >= 0.5):
+                pos = random.choices([f.path for f in os.scandir(random_user)], k=2)
+                neg = random.choice([f.path for f in os.scandir(random_user + "_forg")])
+            else:
+                pos = random.choice([f.path for f in os.scandir(random_user + "_forg")], k=2)
+                neg = random.choices([f.path for f in os.scandir(random_user)])
 
             tripletLabels.append([pos[0], pos[1], neg])
 
