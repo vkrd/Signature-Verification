@@ -3,6 +3,7 @@ import keras
 import os
 import random
 import time
+import numpy as np
 from multiprocessing import Pool
 from keras.preprocessing import image
 
@@ -45,7 +46,7 @@ def load_triplet(triplet):
 def get_batch_random(batch_size, set="train", agents=None, chunksize=1):
     start = time.time()
     if (set == "train"):
-        tripletLabels = []
+        triplet_labels = []
 
         for _ in range(batch_size):
             random_user = random.choice(train_users)
@@ -56,13 +57,35 @@ def get_batch_random(batch_size, set="train", agents=None, chunksize=1):
                 pos = random.choice([f.path for f in os.scandir(random_user + "_forg")], k=2)
                 neg = random.choices([f.path for f in os.scandir(random_user)])
 
-            tripletLabels.append([pos[0], pos[1], neg])
+            triplet_labels.append([pos[0], pos[1], neg])
 
             print("Anchor = " + pos[0] + " Pos = " + pos[1] + " Neg = " + neg)
 
         with Pool(processes=agents) as pool:
-            retTriplet = pool.map(load_triplet, tripletLabels, chunksize=chunksize)
+            ret_triplet = pool.map(load_triplet, triplet_labels, chunksize=chunksize)
 
     end = time.time()
     print(end - start)
-    return retTriplet
+    return ret_triplet
+
+def get_mixed_batch(sample_batch_size, hard_batch_size, normal_batch_size, model, s="train"):
+    if (set == "train"):
+        batch = get_batch_random(sample_batch_size)
+
+        # Calculate embeddings
+        anchor_embeddings = model.predict(batch[0])
+        positive_embeddings = model.predict(batch[1])
+        negative_embeddings = model.predict(batch[2])
+
+        sample_batch_losses = np.sum(np.square(anchor_embeddings - positive_embeddings), axis=1) - np.sum(np.square(anchor_embeddings - negative_embeddings), axis=1)
+
+        sorted_batch = np.argsort(sample_batch_losses)[::-1]
+
+        hard_triplets = sorted_batch[:hard_batch_size]
+        random_triplets = random.choices(sorted_batch[hard_batch_size:], k=normal_batch_size)
+
+        selection = np.append(hard_triplets, random_triplets)
+
+        triplets = [batch[0][selection,:,:,:], batch[1][selection,:,:,:], batch[2][selection,:,:,:]]
+
+        return triplets
