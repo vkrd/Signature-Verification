@@ -6,20 +6,36 @@ import time
 import numpy as np
 from multiprocessing import Pool
 from keras.preprocessing import image
+from keras.layers import Layer, Input
 
 input_shape = (256, 128, 3)
 train_users = []
 test_users = []
 
-def triplet_loss(y_actual, y_pred, alpha = 0.2):
-    pos_dist = tf.reduce_sum(tf.square(tf.subtract(y_pred[0], y_pred[1])), axis=-1)
-    neg_dist = tf.reduce_sum(tf.square(tf.subtract(y_pred[0], y_pred[2])), axis=-1)
+class TripletLossLayer(Layer):
+    def __init__(self, alpha=0.2, **kwargs):
+        self.alpha = alpha
+        super(TripletLossLayer, self).__init__(**kwargs)
 
-    loss = tf.reduce_sum(tf.maximum(pos_dist-neg_dist+alpha, 0.0))
+    def triplet_loss(self, inputs):
+        anchor, positive, negative = inputs
+        pos_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), axis=-1)
+        neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), axis=-1)
 
-    return loss
+        loss = tf.reduce_sum(tf.maximum(pos_dist-neg_dist+self.alpha, 0.0))
+
+        return loss
+
+    def call(self, inputs):
+        loss = self.triplet_loss(inputs)
+        self.add_loss(loss)
+        return loss
 
 def create_model():
+    # Set up input shapes
+    inputs = [Input(input_shape) for _ in range(3)]
+
+
     # Import or create whatever model you want
     model = keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
                                                 input_shape=input_shape, pooling=None, classes=128)
@@ -27,7 +43,7 @@ def create_model():
     # Normalization Layer
     output = keras.layers.Lambda(lambda x: keras.backend.l2_normalize(x, axis=-1))(model.output)
 
-    return keras.Model(model.input, output)
+    return keras.Model(model.input, output, outputs=loss)
 
 def load_data():
     print("Mapping data...")
@@ -77,6 +93,7 @@ def get_mixed_batch(sample_batch_size, hard_batch_size, normal_batch_size, model
         positive_embeddings = model.predict(batch[1])
         negative_embeddings = model.predict(batch[2])
 
+        # Calculate how loss for each triplet
         sample_batch_losses = np.sum(np.square(anchor_embeddings - positive_embeddings), axis=1) - np.sum(np.square(anchor_embeddings - negative_embeddings), axis=1)
 
         sorted_batch = np.argsort(sample_batch_losses)[::-1]
