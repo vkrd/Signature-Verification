@@ -7,6 +7,7 @@ import numpy as np
 from multiprocessing import Pool
 from keras.preprocessing import image
 from keras.layers import Layer, Input
+from keras import Model
 
 input_shape = (256, 128, 3)
 train_users = []
@@ -33,9 +34,22 @@ class TripletLossLayer(Layer):
 
 def create_model():
     # Set up input shapes
-    inputs = [Input(input_shape) for _ in range(3)]
+    anchor_shape = Input(input_shape)
+    positive_shape = Input(input_shape)
+    negative_shape = Input(input_shape)
+
+    model = load_data()
+
+    anchor_embedding = model(anchor_shape)
+    positive_embedding = model(positive_shape)
+    negative_embedding = model(negative_shape)
+
+    loss_layer = TripletLossLayer(alpha=0.2, name='triplet_loss_layer')([anchor_embedding, positive_embedding, negative_embedding])
+
+    return Model(inputs=[anchor_shape, positive_shape, negative_shape],outputs=loss_layer)
 
 
+def load_model():
     # Import or create whatever model you want
     model = keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
                                                 input_shape=input_shape, pooling=None, classes=128)
@@ -43,7 +57,7 @@ def create_model():
     # Normalization Layer
     output = keras.layers.Lambda(lambda x: keras.backend.l2_normalize(x, axis=-1))(model.output)
 
-    return keras.Model(model.input, output, outputs=loss)
+    return Model(model.input, output)
 
 def load_data():
     print("Mapping data...")
