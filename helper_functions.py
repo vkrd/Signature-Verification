@@ -3,13 +3,14 @@ import keras
 import os
 import random
 import time
+from keras.optimizers import Adam
 import numpy as np
 from multiprocessing import Pool
 from keras.preprocessing import image
-from keras.layers import Layer, Input
-from keras import Model
+from keras.layers import *
+from keras import Model, Sequential
 
-input_shape = (256, 128, 3)
+input_shape = (512, 128, 1)
 train_users = []
 test_users = []
 
@@ -32,91 +33,109 @@ class TripletLossLayer(Layer):
         self.add_loss(loss)
         return loss
 
-def create_model():
+def create_model(network):
+
     # Set up input shapes
     anchor_shape = Input(input_shape)
     positive_shape = Input(input_shape)
     negative_shape = Input(input_shape)
 
-    model = load_data()
-
-    anchor_embedding = model(anchor_shape)
-    positive_embedding = model(positive_shape)
-    negative_embedding = model(negative_shape)
+    anchor_embedding = network(anchor_shape)
+    positive_embedding = network(positive_shape)
+    negative_embedding = network(negative_shape)
 
     loss_layer = TripletLossLayer(alpha=0.2, name='triplet_loss_layer')([anchor_embedding, positive_embedding, negative_embedding])
 
-    return Model(inputs=[anchor_shape, positive_shape, negative_shape],outputs=loss_layer)
+    return Model(inputs=[anchor_shape, positive_shape, negative_shape], outputs=loss_layer)
 
 
-def load_model():
+def create_network():
     # Import or create whatever model you want
-    model = keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
-                                                input_shape=input_shape, pooling=None, classes=128)
+    # model = keras.applications.inception_v3.InceptionV3(include_top=True, weights=None, input_tensor=None,
+    #                                            input_shape=input_shape, pooling=None, classes=128)
+
+
+    # Model below from keras documentation
+    network = Sequential()
+    network.add(Conv2D(32, (3, 3), activation='relu', input_shape=input_shape))
+    network.add(Conv2D(32, (3, 3), activation='relu'))
+    network.add(MaxPooling2D(pool_size=(2, 2)))
+    network.add(Dropout(0.25))
+
+    network.add(Conv2D(64, (3, 3), activation='relu'))
+    network.add(Conv2D(64, (3, 3), activation='relu'))
+    network.add(MaxPooling2D(pool_size=(2, 2)))
+    network.add(Dropout(0.25))
+
+    network.add(Flatten())
+    #network.add(Dense(256, activation='relu'))
+    #network.add(Dropout(0.5))
+    network.add(Dense(128, activation='softmax'))
 
     # Normalization Layer
-    output = keras.layers.Lambda(lambda x: keras.backend.l2_normalize(x, axis=-1))(model.output)
+    network.add(Lambda(lambda x: keras.backend.l2_normalize(x, axis=-1)))
 
-    return Model(model.input, output)
+    # output = Lambda(lambda x: keras.backend.l2_normalize(x, axis=-1))(model.output)
+
+    return network
 
 def load_data():
     print("Mapping data...")
     global train_users, test_users
-    train_users = [f.path for f in os.scandir("./data/train") if (not f.path[-1] == "g")]
-    test_users = [f.path for f in os.scandir("./data/test") if (not f.path[-1] == "g")]
-    print(train_users)
+    train_users = [f.path for f in os.scandir("./data/train") if (f.is_dir() and not f.path[-1] == "g")]
+    test_users = [f.path for f in os.scandir("./data/test") if (f.is_dir() and not f.path[-1] == "g")]
     print("Mapped all data")
 
 def load_triplet(triplet):
-    retTriplet = [image.img_to_array(image.load_img(triplet[i], target_size=(input_shape[0], input_shape[1]))) for i in range(3)]
+    retTriplet = [image.img_to_array(image.load_img(triplet[i], color_mode="grayscale",
+                                                    target_size=(input_shape[0], input_shape[1]))) for i in range(3)]
 
     return retTriplet
 
 
-def get_batch_random(batch_size, set="train", agents=None, chunksize=1):
-    start = time.time()
-    if (set == "train"):
-        triplet_labels = []
+def get_batch_random(batch_size, dataset="train", agents=None, chunksize=1):
+    triplet_labels = []
 
-        for _ in range(batch_size):
+    for _ in range(batch_size):
+        if dataset == "train":
             random_user = random.choice(train_users)
-            if (random.random() >= 0.5):
-                pos = random.choices([f.path for f in os.scandir(random_user)], k=2)
-                neg = random.choice([f.path for f in os.scandir(random_user + "_forg")])
-            else:
-                pos = random.choice([f.path for f in os.scandir(random_user + "_forg")], k=2)
-                neg = random.choices([f.path for f in os.scandir(random_user)])
+        else:
+            random_user = random.choice(test_users)
 
-            triplet_labels.append([pos[0], pos[1], neg])
+        if random.random() >= 0.5:
+            pos = random.choices([f.path for f in os.scandir(random_user)], k=2)
+            neg = random.choice([f.path for f in os.scandir(random_user + "_forg")])
+        else:
+            pos = random.choices([f.path for f in os.scandir(random_user + "_forg")], k=2)
+            neg = random.choice([f.path for f in os.scandir(random_user)])
 
-            print("Anchor = " + pos[0] + " Pos = " + pos[1] + " Neg = " + neg)
+        triplet_labels.append([pos[0], pos[1], neg])
 
-        with Pool(processes=agents) as pool:
-            ret_triplet = pool.map(load_triplet, triplet_labels, chunksize=chunksize)
+        # print("Anchor = " + pos[0] + " Pos = " + pos[1] + " Neg = " + neg)
 
-    end = time.time()
-    print(end - start)
+    with Pool(processes=agents) as pool:
+        ret_triplet = pool.map(load_triplet, triplet_labels, chunksize=chunksize)
     return ret_triplet
 
 def get_mixed_batch(sample_batch_size, hard_batch_size, normal_batch_size, model, s="train"):
-    if (set == "train"):
-        batch = get_batch_random(sample_batch_size)
+    batch = np.asarray(get_batch_random(sample_batch_size, dataset=s))
 
-        # Calculate embeddings
-        anchor_embeddings = model.predict(batch[0])
-        positive_embeddings = model.predict(batch[1])
-        negative_embeddings = model.predict(batch[2])
+    # Calculate embeddings
+    anchor_embeddings = model.predict(batch[:,0,:,:], batch_size=sample_batch_size)
+    positive_embeddings = model.predict(batch[:,1,:,:], batch_size=sample_batch_size)
+    negative_embeddings = model.predict(batch[:,2,:,:], batch_size=sample_batch_size)
 
-        # Calculate how loss for each triplet
-        sample_batch_losses = np.sum(np.square(anchor_embeddings - positive_embeddings), axis=1) - np.sum(np.square(anchor_embeddings - negative_embeddings), axis=1)
+    # Calculate how loss for each triplet
+    sample_batch_losses = np.sum(np.square(anchor_embeddings - positive_embeddings), axis=1) - np.sum(np.square(anchor_embeddings - negative_embeddings), axis=1)
 
-        sorted_batch = np.argsort(sample_batch_losses)[::-1]
+    sorted_batch = np.argsort(sample_batch_losses)[::-1]
 
-        hard_triplets = sorted_batch[:hard_batch_size]
-        random_triplets = random.choices(sorted_batch[hard_batch_size:], k=normal_batch_size)
+    hard_triplets = sorted_batch[:hard_batch_size]
+    random_triplets = random.choices(sorted_batch[hard_batch_size:], k=normal_batch_size)
 
-        selection = np.append(hard_triplets, random_triplets)
+    selection = np.append(hard_triplets, random_triplets)
 
-        triplets = [batch[0][selection,:,:,:], batch[1][selection,:,:,:], batch[2][selection,:,:,:]]
+    # triplets = [batch[0][selection,:,:,:], batch[1][selection,:,:,:], batch[2][selection,:,:,:]]
+    triplets = [batch[selection,0,:,:], batch[selection,1,:,:], batch[selection,2,:,:]]
 
-        return triplets
+    return triplets
