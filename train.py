@@ -26,5 +26,6 @@ for i in range(epochs):
         print("Epoch: " + str(i+1) + "/" + str(epochs) + " | Time Lapsed: " + str(round(time.time()-prev, 1)) + " seconds | Loss: " + str(loss))
     prev = time.time()
 
+print("Training complete\n")
 
-print("Training complete")
+save_model(model)

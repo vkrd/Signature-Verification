@@ -142,6 +142,14 @@ def get_mixed_batch(sample_batch_size, hard_batch_size, normal_batch_size, model
 
     return triplets
 
+def save_model(model):
+    model_json = model.to_json()
+    with open("model_arch.json", "w") as json_file:
+        json_file.write(model_json)
+
+    model.save_weights("model_weights.h5")
+    print("Saved model to disk!")
+
 # Function to calculate ideal input shape
 def calculate_average_shape():
     sumWidth = 0.0
@@ -149,7 +157,6 @@ def calculate_average_shape():
     count = 0.0
     for subdir, dirs, files in os.walk("./data"):
         for file in files:
-            # print os.path.join(subdir, file)
             filepath = subdir + os.sep + file
             img = image.img_to_array(image.load_img(filepath, color_mode="grayscale"))
             sumWidth += img.shape[1]
